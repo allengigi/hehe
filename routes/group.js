@@ -150,18 +150,31 @@ router.get('/posts/followed', async (req, res) => {
     const userPosts = await fetchUserPosts(userId);
     const userGroupsWithPosts = await fetchUserGroupsWithPosts(userId);
 
-    const groupIds = [...followedGroupPosts, ...userPosts, ...userGroupsWithPosts]
-      .map(post => post.groupId.toString());
+    const groupIds = [...followedGroupPosts, ...userPosts, ...userGroupsWithPosts].map(post => post.groupId.toString());
 
     const groups = await fetchGroupDetails(groupIds);
 
-    const groupsWithPosts = groups.map(group => {
-      const groupPosts = followedGroupPosts
-        .filter(post => post.groupId.toString() === group._id.toString());
-      const userGroupPosts = userPosts
-        .filter(post => post.groupId.toString() === group._id.toString());
+    const postsByGroupId = {};
 
-      const combinedPosts = [...groupPosts, ...userGroupPosts];
+    followedGroupPosts.forEach(post => {
+      const groupId = post.groupId.toString();
+      if (!postsByGroupId[groupId]) {
+        postsByGroupId[groupId] = [];
+      }
+      postsByGroupId[groupId].push(post);
+    });
+
+    userPosts.forEach(post => {
+      const groupId = post.groupId.toString();
+      if (!postsByGroupId[groupId]) {
+        postsByGroupId[groupId] = [];
+      }
+      postsByGroupId[groupId].push(post);
+    });
+
+    const groupsWithPosts = groups.map(group => {
+      const groupId = group._id.toString();
+      const groupPosts = postsByGroupId[groupId] || [];
 
       return {
         groupId: group._id,
@@ -170,7 +183,7 @@ router.get('/posts/followed', async (req, res) => {
         purpose: group.purpose,
         bio: group.bio,
         followerCount: group.followers.length,
-        posts: combinedPosts.map(post => ({
+        posts: groupPosts.map(post => ({
           image: post.image,
           createdAt: post.createdAt,
           postId: post._id,
@@ -179,14 +192,13 @@ router.get('/posts/followed', async (req, res) => {
       };
     });
 
-    groupsWithPosts.push(...userGroupsWithPosts);
-
     res.status(200).json(groupsWithPosts);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 // Route to follow a group
 router.post('/follow/group/:groupId', async (req, res) => {
