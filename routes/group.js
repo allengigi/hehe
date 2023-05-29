@@ -105,6 +105,89 @@ router.get('/othergroups', async (req, res) => {
   }
 });
 
+/* router.get('/posts/followed', async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    const posts = await fetchFollowedGroupsPosts(userId);
+    const groupIds = posts.map(post => post.groupId);
+
+    const groups = await fetchGroupDetails(groupIds);
+
+    const groupsWithPosts = groups.map(group => {
+      const groupPosts = posts.filter(post => post.groupId.toString() === group._id.toString());
+      
+   
+     return {
+        groupId: group._id,
+        groupName: group.groupName,
+        image: group.image,
+        purpose: group.purpose,
+        bio: group.bio,
+        followerCount: group.followers.length,
+        posts: groupPosts.map(post => ({
+          image: post.image,
+          createdAt: post.createdAt,
+          postId: post._id,
+          likes: post.likes
+        }))
+      };
+    });
+    console.log(groupsWithPosts);
+
+    res.status(200).json(groupsWithPosts);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});  */
+
+router.get('/posts/followed', async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    const followedGroupPosts = await fetchFollowedGroupsPosts(userId);
+    const userPosts = await fetchUserPosts(userId);
+    const userGroupsWithPosts = await fetchUserGroupsWithPosts(userId);
+
+    const groupIds = [...followedGroupPosts, ...userPosts, ...userGroupsWithPosts]
+      .map(post => post.groupId.toString());
+
+    const groups = await fetchGroupDetails(groupIds);
+
+    const groupsWithPosts = groups.map(group => {
+      const groupPosts = followedGroupPosts
+        .filter(post => post.groupId.toString() === group._id.toString());
+      const userGroupPosts = userPosts
+        .filter(post => post.groupId.toString() === group._id.toString());
+
+      const combinedPosts = [...groupPosts, ...userGroupPosts];
+
+      return {
+        groupId: group._id,
+        groupName: group.groupName,
+        image: group.image,
+        purpose: group.purpose,
+        bio: group.bio,
+        followerCount: group.followers.length,
+        posts: combinedPosts.map(post => ({
+          image: post.image,
+          createdAt: post.createdAt,
+          postId: post._id,
+          likes: post.likes
+        }))
+      };
+    });
+
+    groupsWithPosts.push(...userGroupsWithPosts);
+
+    res.status(200).json(groupsWithPosts);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Route to follow a group
 router.post('/follow/group/:groupId', async (req, res) => {
   try {
@@ -125,7 +208,9 @@ router.post('/follow/group/:groupId', async (req, res) => {
       groupName: updatedGroup.groupName,
       followerCount: updatedGroup.followers.length,
       image: updatedGroup.image,
-      posts: postImages
+      posts: postImages,
+      bio: updatedGroup.bio,
+      purpose: updatedGroup.purpose
     }
    console.log(group)
 
@@ -142,6 +227,76 @@ async function getFollowedGroupIds(userId) {
     return user.groupsFollowing.map(group => group._id);
   } catch (error) {
     console.error(error);
+    return [];
+  }
+}
+
+// Function to fetch posts of the groups the user is following
+async function fetchFollowedGroupsPosts(userId) {
+  try {
+    // Get the user's groupsFollowing array
+    const user = await User.findById(userId).populate('groupsFollowing');
+    const followedGroupIds = user.groupsFollowing.map(group => group._id);
+
+    // Fetch the posts of the followed groups
+    const posts = await Post.find({ groupId: { $in: followedGroupIds } });
+
+    return posts;
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+async function fetchGroupDetails(groupIds) {
+  try {
+    const groups = await Group.find({ _id: { $in: groupIds } });
+    return groups;
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+async function fetchUserPosts(userId) {
+  try {
+    // Fetch the groups created by the user
+    const userGroups = await Group.find({ userId });
+    const groupIds = userGroups.map(group => group._id);
+
+    // Fetch the posts of the user's groups
+    const posts = await Post.find({ groupId: { $in: groupIds } });
+    return posts;
+  } catch (error) {
+    console.error('Error fetching user posts:', error);
+    return [];
+  }
+}
+
+async function fetchUserGroupsWithPosts(userId) {
+  try {
+    const groups = await Group.find({ userId });
+    const groupIds = groups.map(group => group._id);
+    const posts = await Post.find({ groupId: { $in: groupIds } });
+
+    return groups.map(group => ({
+      groupId: group._id,
+      groupName: group.groupName,
+      image: group.image,
+      purpose: group.purpose,
+      bio: group.bio,
+      followerCount: group.followers.length,
+      posts: posts
+        .filter(post => post.groupId.toString() === group._id.toString())
+        .map(post => ({
+          image: post.image,
+          createdAt: post.createdAt,
+          postId: post._id,
+          likes: post.likes
+        }))
+    }));
+  } catch (error) {
+    console.error('Error fetching user groups with posts:', error);
     return [];
   }
 }
